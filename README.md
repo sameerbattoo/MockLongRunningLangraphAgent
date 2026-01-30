@@ -22,26 +22,7 @@ python agent.py
 ```
 
 ### Deploy to AWS AgentCore
-
-```bash
-# Install AgentCore toolkit
-uv pip install bedrock-agentcore-starter-toolkit
-
-# Test locally
-agentcore dev
-agentcore invoke --dev '{"sql_query": "SELECT * FROM users"}'
-
-# Deploy to AWS
-uv run agentcore launch \
-	--env ATHENA_MOCK_DURATION=100 \
-  --env MAX_RETRIES=60  \
-  --env AWS_REGION="us-west-2" \
-  --env POLL_INTERVAL=2 \
-  --env LOG_LEVEL="INFO"
-```
-```
-
-See [QUICKSTART.md](QUICKSTART.md) for 5-minute setup or [DEPLOYMENT.md](DEPLOYMENT.md) for detailed guide.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed guide.
 
 ## Architecture
 
@@ -54,64 +35,63 @@ The agent splits query execution into three explicit nodes:
 ### Flow Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         START                                   │
-└────────────────────────────┬────────────────────────────────────┘
+                    ┌─────────────────┐
+                    │     START       │
+                    └────────┬────────┘
                              │
                              ▼
-                  ┌──────────────────────┐
-                  │   Node A: Submit     │
-                  │   Athena Query       │
-                  │                      │
-                  │ - Build SQL          │
-                  │ - Start execution    │
-                  │ - Store query_id     │
-                  └──────────┬───────────┘
-                             │
-                             ▼
-                  ┌──────────────────────┐
-                  │   Node B: Poll       │◄─────────┐
-                  │   Athena Status      │          │
-                  │                      │          │
-                  │ - Check status       │          │
-                  │ - Increment retry    │          │
-                  └──────────┬───────────┘          │
-                             │                      │
-                             ▼                      │
-                  ┌──────────────────────┐          │
-                  │  Conditional Router  │          │
-                  └──────────┬───────────┘          │
-                             │                      │
-                ┌────────────┼────────────┐         │
-                │            │            │         │
-                ▼            ▼            ▼         │
-         [SUCCEEDED]    [RUNNING]    [FAILED]      │
-                │            │            │         │
-                │            │            │         │
-                │      ┌─────┴─────┐      │         │
-                │      │ retry <   │      │         │
-                │      │ max_retry?│      │         │
-                │      └─────┬─────┘      │         │
-                │            │            │         │
-                │       Yes  │  No        │         │
-                │            │            │         │
-                │            └────────────┼─────────┘
-                │                         │
-                ▼                         ▼
-     ┌──────────────────────┐    ┌──────────────┐
-     │   Node C: Fetch      │    │     END      │
-     │   Athena Results     │    │   (Timeout   │
-     │                      │    │   or Failed) │
-     │ - Get results        │    └──────────────┘
-     │ - Format data        │
-     │ - Store in state     │
-     └──────────┬───────────┘
-                │
-                ▼
-         ┌──────────────┐
-         │     END      │
-         │  (Success)   │
-         └──────────────┘
+                    ┌────────────────────┐
+                    │  Node A: Submit    │
+                    │  Athena Query      │
+                    │                    │
+                    │  • Build SQL       │
+                    │  • Start execution │
+                    │  • Store query_id  │
+                    └─────────┬──────────┘
+                              │
+                              ▼
+                    ┌────────────────────┐
+                    │  Node B: Poll      │◄──────────┐
+                    │  Athena Status     │           │
+                    │                    │           │
+                    │  • Check status    │           │
+                    │  • Increment retry │           │
+                    └─────────┬──────────┘           │
+                              │                      │
+                              ▼                      │
+                    ┌────────────────────┐           │
+                    │ Conditional Router │           │
+                    └─────────┬──────────┘           │
+                              │                      │
+              ┌───────────────┼───────────────┐      │
+              │               │               │      │
+              ▼               ▼               ▼      │
+        [SUCCEEDED]      [RUNNING]       [FAILED]    │
+              │               │               │      │
+              │         ┌─────┴─────┐         │      │
+              │         │ retry <   │         │      │
+              │         │max_retry? │         │      │
+              │         └─────┬─────┘         │      │
+              │               │               │      │
+              │          Yes  │  No           │      │
+              │               │               │      │
+              │               └───────────────┼──────┘
+              │                               │
+              ▼                               ▼
+    ┌──────────────────┐            ┌────────────────┐
+    │  Node C: Fetch   │            │      END       │
+    │  Athena Results  │            │   (Timeout or  │
+    │                  │            │     Failed)    │
+    │  • Get results   │            └────────────────┘
+    │  • Format data   │
+    │  • Store state   │
+    └────────┬─────────┘
+             │
+             ▼
+      ┌──────────────┐
+      │     END      │
+      │  (Success)   │
+      └──────────────┘
 ```
 
 ### Edge Conditions
@@ -120,30 +100,6 @@ The agent splits query execution into three explicit nodes:
 - **poll_status → poll_status**: When status is RUNNING and retry_count < max_retries (loops back)
 - **poll_status → fetch_results**: When status is SUCCEEDED
 - **poll_status → END**: When status is FAILED or retry_count >= max_retries
-
-## Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-Or with uv:
-
-```bash
-uv pip install langgraph langchain-core bedrock-agentcore python-dotenv boto3
-```
-
-For AgentCore deployment:
-
-```bash
-uv pip install bedrock-agentcore-starter-toolkit
-```
-
-Verify all dependencies:
-
-```bash
-python verify_dependencies.py
-```
 
 ## Configuration
 
@@ -159,21 +115,6 @@ Edit `.env` to configure:
 - `MAX_RETRIES`: Maximum polling attempts (default: 20)
 - `AWS_DEFAULT_REGION`: AWS region (default: us-east-1)
 - `LOG_LEVEL`: Logging level (default: INFO)
-
-## Usage
-
-### Local Testing
-
-```bash
-python agent.py
-```
-
-### AgentCore Deployment
-
-For deploying to AWS Bedrock AgentCore Runtime, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
-
-The mock Athena query sleeps for 10 seconds, and the agent polls every 2 seconds until completion.
 
 ## Key Features
 
@@ -199,11 +140,7 @@ The mock Athena query sleeps for 10 seconds, and the agent polls every 2 seconds
 ├── .env.example               # Environment template
 ├── .bedrock_agentcore.yaml    # AgentCore configuration
 ├── pyproject.toml             # Python dependencies
-├── QUICKSTART.md              # 5-minute setup guide
 ├── DEPLOYMENT.md              # Detailed deployment guide
-├── AGENTCORE_CHECKLIST.md     # Deployment checklist
-├── ENV_SETUP.md               # Environment variable guide
-├── PROJECT_SUMMARY.md         # Complete project overview
 └── README.md                  # This file
 ```
 
@@ -234,15 +171,3 @@ uv run pytest test_agentcore.py -v
 uv run pytest -v
 ```
 
-## Troubleshooting
-
-Having issues? See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common problems and solutions, including:
-- AWS region configuration errors
-- Environment variable issues
-- Deployment failures
-- Runtime timeouts
-- Missing dependencies (bedrock-agentcore, botocore)
-
-Before deploying, check [PRE_DEPLOYMENT_CHECKLIST.md](PRE_DEPLOYMENT_CHECKLIST.md) to avoid common issues.
-
-## Documentation
