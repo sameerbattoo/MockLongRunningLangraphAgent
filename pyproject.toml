@@ -1,0 +1,15 @@
+[project]
+name = "mocklongrunninglangraphagent"
+version = "0.1.0"
+description = "LangGraph agent demonstrating 3-node pattern for long-running Athena queries"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
